@@ -1,0 +1,339 @@
+/* Librairie */
+
+libname DM '/home/u62483457/DATA MINING';
+
+/* Import de la base de données  */
+
+proc import datafile= '/home/u62483457/DATA MINING/données.csv'
+	out= DM.donnees
+	dbms=csv replace;
+	delimiter=';' ;
+	run;
+
+/* Fréquence */
+
+proc freq data=DM.donnees ;
+TABLE CART CJEU PACKSERV DAV DECAUTH CPAI CARTE SEXE auto GAV PJ Sante SEVDOM ACTION ASSVIEEURO 
+CREDCONSO EPARLOG ASSMH CREDHAB CSL OBLIGATION SICAVFCP EPARBANC ASSPREVDEC ASSDEP CREDRENOV 
+ASSPREVDECDEP / MISSPRINT ;
+run ;
+
+/* Suppression des valeurs manquantes */
+
+DATA DM.donnees ;
+SET DM.donnees ;
+IF SEXE = '' THEN DELETE ;
+RUN ;
+
+/* Retrait des variables CARTE, DAV et SEVDOM */
+
+DATA DM.donnees ;
+SET DM.donnees ;
+DROP CARTE DAV SEVDOM ;
+RUN ;
+
+/* Regroupement des variables */
+
+DATA DM.donnees ;
+SET DM.donnees ;
+IF ASSDEP = 1 OR ASSPREVDEC = 1  OR ASSPREVDECDEP = 1 THEN  ASSPREV = 1 ; ELSE ASSPREV = 0  ;
+IF GAV = 1 OR Sante = 1 THEN GAV_Sante = 1 ; ELSE GAV_Sante = 0 ;
+IF CART =1 OR CJEU = 1 OR CPAI = 1 THEN CARTES = 1; ELSE CARTES = 0;
+IF EPARBANC = 1 OR EPARLOG = 1  THEN EPARGNE = 1; ELSE EPARGNE = 0; 
+IF SICAVFCP = 1 OR ACTION = 1 OR OBLIGATION = 1 THEN PLACEMENT = 1 ; ELSE PLACEMENT = 0 ;
+RUN ;
+
+/* Suppressions de variables qui ont été regroupées */
+
+DATA DM.donnees ;
+SET DM.donnees ;
+DROP ASSDEP ASSPREVDEC ASSPREVDECDEP GAV Sante CART CJEU CPAI EPARBANC EPARLOG SICAVFCP ACTION OBLIGATION;
+RUN ;
+
+
+
+/* Troisième étape: la matrice de cooccurence */
+* Vers le tableau de cooccurence;
+
+* Pour chaque service, on va rechercher le nombre d'autres service associés;
+* On obtiendra une table par service;
+
+proc sql;
+
+create table test as select  
+
+sum(PACKSERV) as PACKSERV, 
+sum(DECAUTH) as DECAUTH,  
+sum(auto) as auto,   
+sum(PJ) as PJ,   
+sum(ASSVIEEURO) as ASSVIEEURO, 
+sum(CREDCONSO) as CREDCONSO,  
+sum(ASSMH) as ASSMH,  
+sum(CREDHAB) as CREDHAB,
+sum(CSL) as CSL,      
+sum(CREDRENOV) as CREDRENOV,  
+sum(ASSPREV) as ASSPREV, 
+sum(GAV_Sante) as GAV_Sante,
+sum(CARTES) as CARTES,
+sum(EPARGNE) as EPARGNE,
+sum(PLACEMENT) as PLACEMENT
+FROM DM.donnees
+WHERE PACKSERV = 1 ;
+QUIT ;
+
+%MACRO tableau2(x);
+PROC SQL ;
+CREATE TABLE &x AS SELECT
+sum(PACKSERV) as PACKSERV, 
+sum(DECAUTH) as DECAUTH,  
+sum(auto) as auto,   
+sum(PJ) as PJ,    
+sum(ASSVIEEURO) as ASSVIEEURO, 
+sum(CREDCONSO) as CREDCONSO,  
+sum(ASSMH) as ASSMH , 
+sum(CREDHAB) as CREDHAB,
+sum(CSL) as CSL,      
+sum(CREDRENOV) as CREDRENOV,  
+sum(ASSPREV) as ASSPREV, 
+sum(GAV_Sante) as GAV_Sante,
+sum(CARTES) as CARTES,
+sum(EPARGNE) as EPARGNE,
+sum(PLACEMENT) as PLACEMENT
+FROM DM.donnees
+WHERE &x = 1 ;
+QUIT ;
+%MEND tableau2;
+
+
+%tableau2(PACKSERV);
+%tableau2(DECAUTH);
+%tableau2(auto);
+%tableau2(PJ);
+%tableau2(ASSVIEEURO);
+%tableau2(CREDCONSO);
+%tableau2(ASSMH);
+%tableau2(CREDHAB);
+%tableau2(CSL);
+%tableau2(CREDRENOV);
+%tableau2(ASSPREV);
+%tableau2(GAV_Sante);
+%tableau2(CARTES);
+%tableau2(EPARGNE);
+%tableau2(PLACEMENT);
+
+
+/* Concatenation des tableaux pour avoir le tableau de cooccurence */
+
+data tableaufinal;
+set PACKSERV DECAUTH auto PJ ASSVIEEURO CREDCONSO ASSMH CREDHAB CSL CREDRENOV ASSPREV GAV_Sante CARTES EPARGNE PLACEMENT;
+keep  PACKSERV DECAUTH auto PJ ASSVIEEURO CREDCONSO ASSMH CREDHAB CSL CREDRENOV ASSPREV GAV_Sante CARTES EPARGNE PLACEMENT;
+run;
+
+
+/*plus simple: en utilisant _n_*/
+
+data etape2;
+set tableaufinal;
+length service $8 ;
+
+if _n_=1 then service='PACKSERV';
+if _n_=2 then service='DECAUTH';
+if _n_=3 then service='auto';
+if _n_=4 then service='PJ';
+if _n_=5 then service='ASSVIEEURO';
+if _n_=6 then service='CREDCONSO';
+if _n_=7 then service='ASSMH';
+if _n_=8 then service='CREDHAB';
+if _n_=9 then service='CSL';
+if _n_= 10 then service = 'CREDRENOV' ;
+if _n_= 11 then service = 'ASSPREV' ;
+if _n_= 12 then service = 'GAV_Sante' ;
+if _n_= 13 then service = 'CARTES' ;
+if _n_= 14 then service = 'EPARGNE';
+if _n_= 15 then service = 'PLACEMENT';
+
+run;
+
+/* Nombre de clients : 71248*/
+
+
+
+
+
+/* Calcul des niveaux de support
+indice de support = Proba(P4 et P6)
+On conserve sur chaque ligne le support du produit qui est en ligne (P4). On le nomme Njj
+Il servira dans le calcul de la confiance
+indice de support = Proba(P4 et P6). 
+indice de confiance = Proba(P4 et P6) / Proba(P4) 
+                    = indice de support (P4 => P6) / indice de support (P4 => P4)
+                    = indice de support (P4 => P6) / Njj
+*/
+
+/* PACKSERV DECAUTH auto PJ ASSVIEEURO CREDCONSO ASSMH CREDHAB CSL CREDRENOV ASSPREV GAV_Sante  */
+/* CARTES EPARGNE PLACEMENT */
+
+data support;
+set etape2;
+sPACKSERV=(PACKSERV/71248)*100;
+sDECAUTH=(DECAUTH/71248)*100;
+sauto=(auto/71248)*100;
+sPJ=(PJ/71248)*100;
+sASSVIEEURO=(ASSVIEEURO/71248)*100;
+sCREDCONSO=(CREDCONSO/71248)*100;
+sASSMH=(ASSMH/71248)*100;
+sCREDHAB=(CREDHAB/71248)*100;
+sCSL=(CSL/71248)*100;
+sCREDRENOV=(CREDRENOV/71248)*100;
+sASSPREV=(ASSPREV/71248)*100;
+sGAV_Sante=(GAV_Sante/71248)*100;
+sCARTES=(CARTES/71248)*100;
+sEPARGNE=(EPARGNE/71248)*100;
+sPLACEMENT=(PLACEMENT/71248)*100;
+
+if _n_=1 then Njj= sPACKSERV ;
+if _n_=2 then Njj= sDECAUTH ;
+if _n_=3 then Njj= sauto ;
+if _n_=4 then Njj= sPJ ;
+if _n_=5 then Njj= sASSVIEEURO ;
+if _n_=6 then Njj= sCREDCONSO ;
+if _n_=7 then Njj= sASSMH ;
+if _n_=8 then Njj= sCREDHAB ;
+if _n_=9 then Njj= sCSL ;
+if _n_= 10 then Njj =  sCREDRENOV  ;
+if _n_= 11 then Njj =  sASSPREV  ;
+if _n_= 12 then Njj =  sGAV_Sante  ;
+if _n_= 13 then Njj =  sCARTES  ;
+if _n_= 14 then Njj =  sEPARGNE ;
+if _n_= 15 then Njj =  sPLACEMENT ;
+
+
+
+keep service sPACKSERV sDECAUTH sauto sPJ sASSVIEEURO sCREDCONSO sASSMH sCREDHAB sCSL sCREDRENOV sASSPREV sGAV_Sante
+sCARTES sEPARGNE sPLACEMENT  Njj;
+run;
+
+/* Export de la table support  */
+
+DATA DM.support_export;
+SET support ;
+RUN ;
+
+PROC EXPORT data = DM.support_export
+OUTFILE='/home/u62483457/DATA MINING/table_support.xlsx'
+DBMS= xlsx REPLACE;
+RUN;
+
+
+
+/* Calcul des niveaux de confiance */
+
+
+
+data confiance;
+set support;
+cPACKSERV=(sPACKSERV/njj)*100;
+cDECAUTH=(sDECAUTH/njj)*100;
+cauto=(sauto/njj)*100;
+cPJ=(sPJ/njj)*100;
+cASSVIEEURO=(sASSVIEEURO/njj)*100;
+cCREDCONSO=(sCREDCONSO/njj)*100;
+cASSMH=(sASSMH/njj)*100;
+cCREDHAB=(sCREDHAB/njj)*100;
+cCSL=(sCSL/njj)*100;
+cCREDRENOV=(sCREDRENOV/njj)*100;
+cASSPREV=(sASSPREV/njj)*100;
+cGAV_Sante=(sGAV_Sante/njj)*100;
+cCARTES=(sCARTES/njj)*100;
+cEPARGNE=(sEPARGNE/njj)*100;
+cPLACEMENT=(sPLACEMENT/njj)*100;
+
+keep service cPACKSERV cDECAUTH cauto cPJ cASSVIEEURO cCREDCONSO cASSMH cCREDHAB cCSL cCREDRENOV 
+cASSPREV cGAV_Sante cCARTES cEPARGNE cPLACEMENT Njj;
+run;
+
+/* Export de la table confiance  */
+
+DATA DM.confiance_export;
+SET confiance ;
+RUN ;
+
+PROC EXPORT data = DM.confiance_export
+OUTFILE='/home/u62483457/DATA MINING/table_confiance.xlsx'
+DBMS= xlsx REPLACE;
+RUN;
+
+
+
+/* Calcul des lifts */
+/*
+lift =  Proba(P4 et P6) / (Proba(P4).Proba(P6)) 
+     = indice de confiance / indice de support (P6 => P6)
+On va donc devoir transposer la table des indices de confiance avant
+de faire l'opération sur les Njj*/
+
+/* Extraction des Njj dans une table différente */
+
+data njj;
+set confiance;
+if first.obs then observ=1;
+observ+1;
+keep observ service Njj;
+run;
+
+data calcul_lift;
+set confiance;
+drop service Njj;
+run;
+
+/* on transpose le tableau lift*/
+proc transpose data=calcul_lift out=calcul_lift3;
+run;
+
+data calcul_lift4;
+set calcul_lift3;
+if first.obs then observ=1;
+observ+1;
+run;
+
+
+/* On fusionne les 2 tables calcul_lift et Njj et on calcule le lift */
+/* On retrouve ici une matrice Symétrique*/
+data lift;
+merge calcul_lift4 njj;
+by observ;
+
+lPACKSERV=col1/Njj;
+lDECAUTH=col2/Njj;
+lauto=col3/Njj;
+lPJ=col4/Njj;
+lASSVIEEURO=col5/Njj;
+lCREDCONSO=col6/Njj;
+lASSMH=col7/Njj;
+lCREDHAB=col8/Njj;
+lCSL=col9/Njj;
+lCREDRENOV=col10/Njj;
+lASSPREV=col11/Njj;
+lGAV_Sante=col12/Njj;
+lCARTES=col13/Njj;
+lEPARGNE=col14/Njj;
+lPLACEMENT=col15/Njj;
+
+keep _NAME_ lPACKSERV lDECAUTH lauto lPJ lASSVIEEURO lCREDCONSO lASSMH lCREDHAB lCSL lCREDRENOV lASSPREV lGAV_Sante lCARTES lEPARGNE lPLACEMENT ;
+run;
+
+/* Export de la table lift  */
+DATA DM.lift_export;
+SET lift ;
+RUN ;
+
+PROC EXPORT data = DM.lift_export
+OUTFILE='/home/u62483457/DATA MINING/table_lift.xlsx'
+DBMS= xlsx REPLACE;
+RUN;
+
+
+
+
+/* PACKSERV DECAUTH auto PJ ASSVIEEURO CREDCONSO ASSMH CREDHAB CSL CREDRENOV ASSPREV GAV_Sante  */
+/* CARTES EPARGNE PLACEMENT */
